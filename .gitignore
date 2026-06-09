@@ -1,0 +1,4 @@
+.env
+inventory.ini
+mc_server_key
+mc_server_key.pub

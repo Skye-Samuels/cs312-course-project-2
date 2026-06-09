@@ -1,0 +1,59 @@
+---
+- name: Provision AWS Infrastructure for Minecraft
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    region: "us-east-1"
+    instance_type: "t3.medium"
+    ami_id: "ami-04a81a99f5ec58529" # Ubuntu 24.04 LTS in us-east-1
+
+  # This block reads your local .env file and extracts the keys automatically
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ lookup('ini', 'AWS_ACCESS_KEY_ID type=properties file=.env') }}"
+    AWS_SECRET_ACCESS_KEY: "{{ lookup('ini', 'AWS_SECRET_ACCESS_KEY type=properties file=.env') }}"
+    AWS_SESSION_TOKEN: "{{ lookup('ini', 'AWS_SESSION_TOKEN type=properties file=.env') }}"
+    AWS_DEFAULT_REGION: "{{ region }}"
+
+  tasks:
+    - name: Create AWS Key Pair using our local public key
+      amazon.aws.ec2_key:
+        name: "mc_server_key"
+        key_material: "{{ lookup('file', './mc_server_key.pub') }}"
+        region: "{{ region }}"
+
+    - name: Create Security Group for Minecraft and SSH
+      amazon.aws.ec2_security_group:
+        name: "mc_server_sg"
+        description: "Allow SSH and Minecraft traffic"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+            rule_desc: "SSH access for Ansible"
+          - proto: tcp
+            from_port: 25565
+            to_port: 25565
+            cidr_ip: 0.0.0.0/0
+            rule_desc: "Minecraft server port"
+
+    - name: Provision EC2 Instance
+      amazon.aws.ec2_instance:
+        name: "minecraft-sysadmin-server"
+        key_name: "mc_server_key"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        region: "{{ region }}"
+        security_group: "mc_server_sg"
+        network:
+          assign_public_ip: true
+        tags:
+          Environment: CourseProject2
+      register: ec2
+
+    - name: Output the Public IP Address
+      ansible.builtin.debug:
+        msg: "Your EC2 Public IP is: {{ ec2.instances[0].public_ip_address }}"

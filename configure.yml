@@ -1,0 +1,82 @@
+---
+- name: Configure EC2 Instance and Deploy Minecraft
+  hosts: minecraft_servers
+  become: true # Runs commands with sudo privileges
+  gather_facts: true
+
+  tasks:
+    - name: Update apt cache and upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Set up Docker modern DEB822 repository (Fixes deprecation warnings)
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: [deb]
+        uris: "https://download.docker.com/linux/ubuntu"
+        suites: "{{ ansible_distribution_release }}"
+        components: [stable]
+        signed_by: "https://download.docker.com/linux/ubuntu/gpg"
+        state: present
+
+    - name: Install Docker Engine and Docker Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Ensure Docker service is running and enabled on boot
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create deployment directory for Minecraft
+      ansible.builtin.file:
+        path: /home/ubuntu/minecraft
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy Docker Compose blueprint to server
+      ansible.builtin.copy:
+        src: ./docker-compose.yml
+        dest: /home/ubuntu/minecraft/docker-compose.yml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Deploy the custom Systemd Service Wrapper (Graceful Shutdown Fix)
+      ansible.builtin.template:
+        src: ./minecraft.service.j2
+        dest: /etc/systemd/system/minecraft.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd daemon to recognize the new service (Fixed syntax error)
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start the Minecraft service
+      ansible.builtin.service:
+        name: minecraft
+        state: started
+        enabled: true
