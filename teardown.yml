@@ -1,0 +1,43 @@
+---
+- name: Teardown AWS Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    region: "us-east-1"
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ lookup('ini', 'AWS_ACCESS_KEY_ID type=properties file=.env') }}"
+    AWS_SECRET_ACCESS_KEY: "{{ lookup('ini', 'AWS_SECRET_ACCESS_KEY type=properties file=.env') }}"
+    AWS_SESSION_TOKEN: "{{ lookup('ini', 'AWS_SESSION_TOKEN type=properties file=.env') }}"
+    AWS_DEFAULT_REGION: "{{ region }}"
+
+  tasks:
+    - name: Gather facts about our Minecraft instance
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "minecraft-sysadmin-server"
+          instance-state-name: ["running", "pending", "stopped"]
+        region: "{{ region }}"
+      register: ec2_info
+
+    - name: Terminate EC2 Instance
+      amazon.aws.ec2_instance:
+        state: absent
+        instance_ids: "{{ ec2_info.instances | map(attribute='instance_id') | list }}"
+        region: "{{ region }}"
+        wait: true
+      when: ec2_info.instances | length > 0
+
+    - name: Delete Security Group
+      amazon.aws.ec2_security_group:
+        name: "mc_server_sg"
+        state: absent
+        region: "{{ region }}"
+
+    - name: Delete Key Pair
+      amazon.aws.ec2_key:
+        name: "mc_server_key"
+        state: absent
+        region: "{{ region }}"
